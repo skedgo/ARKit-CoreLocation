@@ -79,6 +79,9 @@ class ViewController: UIViewController, MKMapViewDelegate, SceneLocationViewDele
             mapView.showsUserLocation = true
             mapView.alpha = 0.8
             view.addSubview(mapView)
+          
+            let longPress = UILongPressGestureRecognizer(target: self, action: #selector(handleLongPress))
+            mapView.addGestureRecognizer(longPress)
             
             updateUserLocationTimer = Timer.scheduledTimer(
                 timeInterval: 0.5,
@@ -239,6 +242,29 @@ class ViewController: UIViewController, MKMapViewDelegate, SceneLocationViewDele
                 }
             }
         }
+    }
+  
+    @objc func handleLongPress(_ recognizer: UILongPressGestureRecognizer) {
+        guard let currentLocation = sceneLocationView.currentLocation() else {
+            // We need the current location to get a decent estimate of the altitude
+            return
+        }
+        
+        let point = recognizer.location(in: mapView)
+        let coordinate: CLLocationCoordinate2D = mapView.convert(point, toCoordinateFrom: mapView)
+
+        // Add it to the map
+        let annotation = MKPointAnnotation()
+        annotation.coordinate = coordinate
+        annotation.title = "Dropped Location"
+        mapView.addAnnotation(annotation)
+        
+        // Add it to AR
+        let image = UIImage(named: "compass")!
+        let location = CLLocation(coordinate: coordinate, altitude: currentLocation.altitude)
+        let annotationNode = LocationAnnotationNode(location: location, image: image)
+        annotationNode.scaleRelativeToDistance = false
+        sceneLocationView.addLocationNodeWithConfirmedLocation(locationNode: annotationNode)
     }
     
     //MARK: MKMapViewDelegate
