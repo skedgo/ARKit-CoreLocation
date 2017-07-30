@@ -22,7 +22,7 @@ class ViewController: UIViewController, MKMapViewDelegate, SceneLocationViewDele
     
     ///Whether to show a map view
     ///The initial value is respected
-    var showMapView: Bool = false
+    var showMapView: Bool = true
     
     var centerMapOnUserLocation: Bool = true
     
@@ -36,7 +36,9 @@ class ViewController: UIViewController, MKMapViewDelegate, SceneLocationViewDele
     var updateInfoLabelTimer: Timer?
     
     var adjustNorthByTappingSidesOfScreen = false
-    
+  
+    fileprivate var coordinatesInPress = [CLLocationCoordinate2D]()
+  
     override func viewDidLoad() {
         super.viewDidLoad()
         
@@ -80,6 +82,8 @@ class ViewController: UIViewController, MKMapViewDelegate, SceneLocationViewDele
             mapView.alpha = 0.8
             view.addSubview(mapView)
           
+            // Long press on map to add an annotation (long press + release)
+            // or a polyline (long press + drag + release)
             let longPress = UILongPressGestureRecognizer(target: self, action: #selector(handleLongPress))
             mapView.addGestureRecognizer(longPress)
             
@@ -245,26 +249,36 @@ class ViewController: UIViewController, MKMapViewDelegate, SceneLocationViewDele
     }
   
     @objc func handleLongPress(_ recognizer: UILongPressGestureRecognizer) {
-        guard let currentLocation = sceneLocationView.currentLocation() else {
-            // We need the current location to get a decent estimate of the altitude
-            return
-        }
-        
         let point = recognizer.location(in: mapView)
         let coordinate: CLLocationCoordinate2D = mapView.convert(point, toCoordinateFrom: mapView)
-
-        // Add it to the map
-        let annotation = MKPointAnnotation()
-        annotation.coordinate = coordinate
-        annotation.title = "Dropped Location"
-        mapView.addAnnotation(annotation)
-        
-        // Add it to AR
-        let image = UIImage(named: "compass")!
-        let location = CLLocation(coordinate: coordinate, altitude: currentLocation.altitude)
-        let annotationNode = LocationAnnotationNode(location: location, image: image)
-        annotationNode.scaleRelativeToDistance = false
-        sceneLocationView.addLocationNodeWithConfirmedLocation(locationNode: annotationNode)
+      
+        switch recognizer.state {
+        case .possible: break
+        case .began:    coordinatesInPress = [coordinate]
+        case .changed:  coordinatesInPress.append(coordinate)
+        case .ended:    flushCoordinates()
+        case .cancelled, .failed: coordinatesInPress = []
+        }
+    }
+  
+    private func flushCoordinates() {
+      
+        switch coordinatesInPress.count {
+        case 0:
+            return
+        case 1:
+            let annotation = MKPointAnnotation()
+            let coordinate = coordinatesInPress.first!
+            annotation.coordinate = coordinate
+            annotation.title = "Dropped Location"
+            mapView.addAnnotation(annotation)
+            sceneLocationView.addAnnotation(annotation)
+        default:
+            let polyline = MKPolyline(coordinates: coordinatesInPress, count: coordinatesInPress.count)
+            mapView.add(polyline)
+            sceneLocationView.addPolyline(polyline)
+        }
+      
     }
     
     //MARK: MKMapViewDelegate
@@ -291,6 +305,20 @@ class ViewController: UIViewController, MKMapViewDelegate, SceneLocationViewDele
         
         return nil
     }
+  
+    func mapView(_ mapView: MKMapView, rendererFor overlay: MKOverlay) -> MKOverlayRenderer {
+        if let polyline = overlay as? MKPolyline {
+            let renderer = MKPolylineRenderer(polyline: polyline)
+            renderer.lineWidth = 10
+            renderer.strokeColor = .blue
+            renderer.fillColor = .blue
+            return renderer
+            
+        } else {
+            return MKOverlayRenderer(overlay: overlay)
+        }
+    }
+    
     
     //MARK: SceneLocationViewDelegate
     
